@@ -1,157 +1,325 @@
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
+/*
+ * Designed and developed by 2026 ashtanko (Oleksii Shtanko)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+import java.util.Properties
+
+private val storePasswordKey = "storePassword"
+private val keyPasswordKey = "keyPassword"
+private val keyAliasKey = "keyAlias"
+private val storeFileKey = "storeFile"
+private val releaseSigningKeys = listOf(
+    storePasswordKey,
+    keyPasswordKey,
+    keyAliasKey,
+    storeFileKey,
+)
+private val releaseSigningEnvironmentVariables = mapOf(
+    storePasswordKey to "SIGNING_STORE_PASSWORD",
+    keyPasswordKey to "SIGNING_KEY_PASSWORD",
+    keyAliasKey to "SIGNING_KEY_ALIAS",
+    storeFileKey to "SIGNING_KEYSTORE_PATH",
+)
+
+data class ReleaseSigningCredentials(
+    val storeFile: File,
+    val storePassword: String,
+    val keyAlias: String,
+    val keyPassword: String,
+)
+
+val releaseSigningPropertiesFile = rootProject.file("key.properties")
+val releaseSigningProperties = Properties().apply {
+    if (releaseSigningPropertiesFile.isFile) {
+        releaseSigningPropertiesFile.inputStream().use(::load)
+    }
+}
+val releaseSigningEnvironmentValues = releaseSigningEnvironmentVariables.mapValues { (_, name) ->
+    providers.environmentVariable(name).orNull
+}
+val hasAnyReleaseSigningEnvironmentValue =
+    releaseSigningEnvironmentValues.values.any { !it.isNullOrBlank() }
+val hasCompleteReleaseSigningEnvironment =
+    releaseSigningEnvironmentValues.values.all { !it.isNullOrBlank() }
+val hasCompleteLocalReleaseSigningProperties =
+    releaseSigningKeys.all { !releaseSigningProperties.getProperty(it).isNullOrBlank() }
+
+val releaseSigningCredentials = when {
+    hasCompleteReleaseSigningEnvironment -> ReleaseSigningCredentials(
+        storeFile = rootProject.file(releaseSigningEnvironmentValues.getValue(storeFileKey)!!),
+        storePassword = releaseSigningEnvironmentValues.getValue(storePasswordKey)!!,
+        keyAlias = releaseSigningEnvironmentValues.getValue(keyAliasKey)!!,
+        keyPassword = releaseSigningEnvironmentValues.getValue(keyPasswordKey)!!,
+    )
+
+    !hasAnyReleaseSigningEnvironmentValue && hasCompleteLocalReleaseSigningProperties ->
+        ReleaseSigningCredentials(
+            storeFile = rootProject.file(releaseSigningProperties.getProperty(storeFileKey)),
+            storePassword = releaseSigningProperties.getProperty(storePasswordKey),
+            keyAlias = releaseSigningProperties.getProperty(keyAliasKey),
+            keyPassword = releaseSigningProperties.getProperty(keyPasswordKey),
+        )
+
+    else -> null
+}
+
+val releaseSigningConfigurationError = when {
+    hasAnyReleaseSigningEnvironmentValue && !hasCompleteReleaseSigningEnvironment -> {
+        val missingVariables = releaseSigningEnvironmentVariables
+            .filterKeys { releaseSigningEnvironmentValues[it].isNullOrBlank() }
+            .values
+            .joinToString()
+        "Release signing environment is incomplete. Missing: $missingVariables."
+    }
+
+    releaseSigningPropertiesFile.isFile && !hasCompleteLocalReleaseSigningProperties -> {
+        val missingProperties = releaseSigningKeys
+            .filter { releaseSigningProperties.getProperty(it).isNullOrBlank() }
+            .joinToString()
+        "Release signing file ${releaseSigningPropertiesFile.path} is incomplete. " +
+            "Missing: $missingProperties."
+    }
+
+    releaseSigningCredentials == null ->
+        "Release signing is not configured. Copy key.properties.example to key.properties " +
+            "for local builds, or configure the production secrets described in RELEASING.md."
+
+    !releaseSigningCredentials.storeFile.isFile ->
+        "Release keystore does not exist: ${releaseSigningCredentials.storeFile.path}"
+
+    else -> null
+}
+
 plugins {
-    alias(libs.plugins.android.application) apply false
-    alias(libs.plugins.android.library) apply false
-    alias(libs.plugins.android.test) apply false
-    alias(libs.plugins.kotlin.jvm) apply false
-    alias(libs.plugins.kotlin.compose) apply false
-    alias(libs.plugins.compose.guard) apply false
-    alias(libs.plugins.detekt) apply false
-    alias(libs.plugins.ksp) apply false
-    alias(libs.plugins.room) apply false
-    alias(libs.plugins.hilt) apply false
-    alias(libs.plugins.android.junit5) apply false
-    alias(libs.plugins.screenshot) apply false
-    alias(libs.plugins.baselineprofile) apply false
-    alias(libs.plugins.dependencyGuard) apply false
-    alias(libs.plugins.spotless) apply false
-    alias(libs.plugins.sonarqube) apply false
-    alias(libs.plugins.kotlin.parcelize) apply false
-    alias(libs.plugins.serialization) apply false
-    alias(libs.plugins.google.android.libraries.mapsplatform.secrets.gradle.plugin) apply false
+    alias(libs.plugins.androidlab.android.application.compose)
+    alias(libs.plugins.androidlab.android.application.baselineprofile)
+    alias(libs.plugins.androidlab.android.application.jacoco)
+    alias(libs.plugins.androidlab.android.compose.screenshot)
+    alias(libs.plugins.androidlab.android.junit5)
+    alias(libs.plugins.androidlab.android.room)
+    alias(libs.plugins.androidlab.hilt)
+    alias(libs.plugins.kotlin.parcelize)
+    alias(libs.plugins.serialization)
+    alias(libs.plugins.sonarqube)
+
+    // Uncomment the below plugins to enable Firebase and Play Publisher deployments
+    // alias(libs.plugins.google.services)
+    // alias(libs.plugins.firebase.crashlytics)
+    // alias(libs.plugins.play.publisher)
 }
 
-tasks.register("spotlessCheck") {
-    group = "verification"
-    description = "Checks formatting in the included build logic."
-    dependsOn(gradle.includedBuild("build-logic").task(":convention:spotlessCheck"))
-}
+android {
+    namespace = "com.chronos.examcountdown"
 
-tasks.register("spotlessApply") {
-    group = "formatting"
-    description = "Applies formatting in the included build logic."
-    dependsOn(gradle.includedBuild("build-logic").task(":convention:spotlessApply"))
-}
-
-tasks.register("detekt") {
-    group = "verification"
-    description = "Runs Detekt in the included build logic."
-    dependsOn(gradle.includedBuild("build-logic").task(":convention:detekt"))
-}
-
-tasks.register("detektCompose") {
-    group = "verification"
-    description = "Runs Compose-specific Detekt rules in every module."
-}
-
-tasks.register("detektAutoCorrect") {
-    group = "formatting"
-    description = "Runs Detekt auto-correction in every module."
-}
-
-val integrationTest = tasks.register("integrationTest") {
-    group = "verification"
-    description = "Runs integration tests in every Kotlin/JVM module."
-}
-
-val coverageReport = tasks.register("coverageReport") {
-    group = "reporting"
-    description = "Generates JVM and Android reports from available unit and device coverage."
-}
-
-val coverageVerification = tasks.register("coverageVerification") {
-    group = "verification"
-    description = "Enforces JVM business-logic coverage thresholds."
-}
-
-val ciManagedDeviceTest = tasks.register("ciManagedDeviceTest") {
-    group = "verification"
-    description = "Runs every debug instrumentation and end-to-end test on the CI device group."
-}
-
-val allManagedDeviceTest = tasks.register("allManagedDeviceTest") {
-    group = "verification"
-    description = "Runs every debug instrumentation and end-to-end test on all managed devices."
-}
-
-subprojects {
-    pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
-        integrationTest.configure {
-            dependsOn(tasks.named("integrationTest"))
-        }
-        coverageReport.configure {
-            dependsOn(tasks.named("jacocoTestReport"))
-        }
-        coverageVerification.configure {
-            dependsOn(tasks.named("jacocoTestCoverageVerification"))
-        }
+    defaultConfig {
+        applicationId = "com.chronos.examcountdown"
+        versionCode = 1
+        versionName = "1.0"
+        testInstrumentationRunner = "app.template.HiltTestRunner"
     }
 
-    listOf(
-        "androidlab.android.application.jacoco",
-        "androidlab.android.library.jacoco",
-    ).forEach { pluginId ->
-        pluginManager.withPlugin(pluginId) {
-            coverageReport.configure {
-                dependsOn(tasks.named("createDebugCombinedCoverageReport"))
+    androidResources {
+        generateLocaleConfig = true
+    }
+
+    signingConfigs {
+        register("release") {
+            releaseSigningCredentials?.let { credentials ->
+                storeFile = credentials.storeFile
+                storePassword = credentials.storePassword
+                keyAlias = credentials.keyAlias
+                keyPassword = credentials.keyPassword
             }
         }
     }
 
-    listOf(
-        "com.android.application",
-        "com.android.library",
-        "com.android.test",
-    ).forEach { pluginId ->
-        pluginManager.withPlugin(pluginId) {
-            ciManagedDeviceTest.configure {
-                dependsOn(tasks.matching { it.name == "ciGroupDebugAndroidTest" })
-            }
-            allManagedDeviceTest.configure {
-                dependsOn(tasks.matching { it.name == "allDevicesDebugAndroidTest" })
-            }
+    buildTypes {
+        debug {
+            isPseudoLocalesEnabled = true
+        }
+
+        release {
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            signingConfig = signingConfigs.getByName("release")
+        }
+
+        create("benchmark") {
+            initWith(buildTypes.getByName("release"))
+            matchingFallbacks += listOf("release")
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            proguardFiles("benchmark-rules.pro")
+        }
+    }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            merges += "META-INF/LICENSE.md"
+            merges += "META-INF/LICENSE-notice.md"
         }
     }
 }
 
-// Bootstraps a new project from this template by delegating to
-// scripts/rename-template.sh. Same flags, exposed as Gradle properties:
-//
-//   ./gradlew renameProject \
-//     -Ppackage=com.example.myapp \
-//     -Pname="My Awesome App" \
-//     [-PpluginAlias=myapp] \
-//     [-Pauthor="Jane Doe"] \
-//     [-PdryRun=true] \
-//     [-Pverbose=true] \
-//     [-Pforce=true]
-tasks.register<Exec>("renameProject") {
-    group = "template"
-    description = "Rename packages, applicationId, plugin aliases, folders, and (optionally) author headers."
+tasks {
+    val validateReleaseSigningConfiguration = register("validateReleaseSigningConfiguration") {
+        group = "verification"
+        description = "Validate credentials required to sign a release artifact"
 
-    val newPackage  = providers.gradleProperty("package")
-    val newName     = providers.gradleProperty("name")
-    val pluginAlias = providers.gradleProperty("pluginAlias")
-    val author      = providers.gradleProperty("author")
-    val dryRun      = providers.gradleProperty("dryRun").map { it.toBoolean() }.orElse(false)
-    val verbose     = providers.gradleProperty("verbose").map { it.toBoolean() }.orElse(false)
-    val force       = providers.gradleProperty("force").map { it.toBoolean() }.orElse(false)
-    val script      = layout.projectDirectory.file("scripts/rename-template.sh").asFile
-
-    doFirst {
-        check(newPackage.isPresent) { "missing -Ppackage=<com.example.app>" }
-        check(newName.isPresent)    { "missing -Pname=<\"My App\">" }
-        val cmd = mutableListOf("bash", script.absolutePath,
-            "--package", newPackage.get(),
-            "--name",    newName.get())
-        pluginAlias.orNull?.let { cmd += listOf("--plugin-alias", it) }
-        author.orNull?.let      { cmd += listOf("--author", it) }
-        if (dryRun.get()) cmd += "--dry-run"
-        if (verbose.get()) cmd += "--verbose"
-        if (force.get())  cmd += "--force"
-        commandLine(cmd)
+        doLast {
+            releaseSigningConfigurationError?.let { throw GradleException(it) }
+        }
     }
-    // Placeholder commandLine; replaced in doFirst above. Gradle requires it
-    // be non-empty at configuration time.
-    commandLine("bash", "-c", "true")
+
+    matching { it.name == "validateSigningRelease" }.configureEach {
+        dependsOn(validateReleaseSigningConfiguration)
+    }
+
+    getByName("check") {
+        dependsOn("detekt")
+    }
+
+    getByName("sonar") {
+        dependsOn("check")
+    }
+
+    withType<Test> {
+        useJUnitPlatform()
+        maxHeapSize = "2g"
+        maxParallelForks = Runtime.getRuntime().availableProcessors()
+        jvmArgs = jvmArgs.orEmpty() + "-XX:+UseParallelGC"
+        jvmArgs(
+            "--add-opens",
+            "java.base/java.util=ALL-UNNAMED",
+            "--add-opens",
+            "java.base/java.lang=ALL-UNNAMED",
+            "--add-opens",
+            "java.base/java.time=ALL-UNNAMED",
+            "-Xshare:off",
+        )
+    }
+
 }
+
+dependencies {
+    implementation(project(":core:designsystem"))
+    implementation(project(":feature:home"))
+    implementation(project(":feature:posts:data"))
+    implementation(project(":feature:posts:presentation"))
+    implementation(project(":androidx.glance:glance-appwidget:1.0.0"))
+
+    // Firebase (Uncomment when you have added google-services.json)
+    // implementation(platform(libs.firebase.bom))
+    // implementation(libs.firebase.analytics)
+    // implementation(libs.firebase.crashlytics)
+
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.activity.compose)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.ui.tooling.preview)
+    implementation(libs.androidx.material3)
+    implementation(libs.androidx.runtime.tracing)
+    implementation(libs.androidx.tracing.ktx)
+    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.androidx.navigation3.ui)
+    implementation(libs.androidx.material3.navigation3)
+
+    implementation(libs.androidx.compose.material3.adaptive)
+    implementation(libs.androidx.compose.material3.adaptive.layout)
+    implementation(libs.androidx.compose.material3.adaptive.navigation)
+    implementation(libs.androidx.compose.material3.adaptive.navigationSuite)
+    implementation(libs.androidx.compose.materialWindow)
+    implementation(libs.androidx.compose.icons.extended)
+
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(project(":feature:posts:domain"))
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.ui.test.junit4)
+    androidTestImplementation(libs.truth)
+    testImplementation(libs.androidx.ui.test.junit4)
+
+    debugImplementation(libs.androidx.ui.tooling)
+    debugImplementation(libs.androidx.ui.test.manifest)
+
+    implementation(libs.androidx.ui.text.google.fonts)
+
+    androidTestImplementation(libs.arch.core.test)
+
+    baselineProfile(project(":benchmarks"))
+
+    implementation(libs.paging.runtime)
+    implementation(libs.paging.compose)
+
+    implementation(libs.generativeai)
+
+    implementation(libs.kotlinx.collections.immutable)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.serialization)
+
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.kotlinx.coroutines.debug)
+
+    implementation(libs.coil.kt)
+    implementation(libs.coil.kt.compose)
+    implementation(libs.coil.kt.svg)
+
+    kspTest(libs.hilt.compiler)
+    kspAndroidTest(libs.hilt.compiler)
+    testImplementation(libs.hilt.android.testing)
+    androidTestImplementation(libs.hilt.android.testing)
+
+    implementation(libs.accompanist.adaptive)
+    implementation(libs.accompanist.permissions)
+
+    implementation(libs.androidx.window)
+    implementation(libs.androidx.window.core)
+
+    implementation(libs.room.paging)
+
+    implementation(libs.square.okhttp)
+    implementation(libs.square.okhttp.logging)
+    implementation(libs.square.retrofit.core)
+    implementation(libs.skydoves.sandwich.retrofit)
+    implementation(libs.square.retrofit.kotlin.serialization)
+
+    testImplementation(libs.square.turbine)
+    testImplementation(libs.mockito)
+    testImplementation(libs.mockito.kotlin2)
+    testImplementation(libs.mockk.kotlin)
+    androidTestImplementation(libs.mockk.android)
+
+    testImplementation(libs.robolectric.robolectric)
+    testImplementation(libs.androidx.activity.compose)
+
+    androidTestImplementation(libs.androidx.espresso.core)
+}
+
+dependencyGuard {
+    configuration("releaseRuntimeClasspath")
+}
+
+// Uncomment and configure to enable automated Google Play deployments
+// play {
+//     serviceAccountCredentials.set(file("serviceAccountCredentials.json"))
+//     track.set("internal")
+//     defaultToAppBundles.set(true)
+// }
