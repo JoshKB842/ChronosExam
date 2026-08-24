@@ -1,0 +1,85 @@
+/*
+ * Designed and developed by 2026 ashtanko (Oleksii Shtanko)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package app.template
+
+import androidx.compose.material3.Text
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.test.espresso.Espresso
+import app.template.home.navigation.MainNavigation
+import app.template.home.navigation.Screen
+import org.junit.Rule
+import org.junit.Test
+
+class MainNavigationTest {
+    @get:Rule
+    val composeTestRule = createComposeRule()
+
+    @Test
+    fun testNavigationFlow_FromHomeToPosts() {
+        // Start the app
+        composeTestRule.setContent {
+            MainNavigation(postsContent = { Text("Posts") })
+        }
+
+        // 1. Verify we start on the home feature
+        composeTestRule.onNodeWithText("Compose Android Template").assertIsDisplayed()
+
+        // 2. Navigate to the posts demo
+        composeTestRule.onNodeWithText("Explore navigation").performClick()
+
+        // Wait for transition and verify the posts destination
+        composeTestRule.onNodeWithText("Posts").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Compose Android Template").assertDoesNotExist()
+    }
+
+    @Test
+    fun testBackNavigation_RemovesEntries() {
+        composeTestRule.setContent {
+            MainNavigation(postsContent = { Text("Posts") })
+        }
+
+        // Navigate to posts
+        composeTestRule.onNodeWithText("Explore navigation").performClick()
+        composeTestRule.onNodeWithText("Posts").assertIsDisplayed()
+
+        // Trigger system back (Navigation3 handles this via the onBack lambda)
+        Espresso.pressBack()
+
+        // Verify we are back on the home feature
+        composeTestRule.onNodeWithText("Compose Android Template").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Posts").assertDoesNotExist()
+    }
+
+    @Test
+    fun testStartAtScreenB() {
+        composeTestRule.setContent {
+            // Testability: we can start at any screen by providing a custom backstack
+            val backStack = rememberNavBackStack(Screen.ScreenB)
+            MainNavigation(
+                backStack = backStack,
+                postsContent = { Text("Posts") },
+            )
+        }
+
+        // Verify we start on posts
+        composeTestRule.onNodeWithText("Posts").assertIsDisplayed()
+    }
+}
